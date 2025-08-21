@@ -19,6 +19,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String OPENWHEATHER_KEY = "";
     private static final String CIDADE_DEFAULT = "Sabará";
     private TextView clima;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -29,10 +30,10 @@ public class MainActivity extends AppCompatActivity {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
-        clima = findViewById(R.id.main);
-        buscarCidadePorIp();
+        //clima = findViewById(R.id.main);
+        //buscarCidadePorIp();
     }
-
+    /*
     private void buscarCidadePorIp(){
         IpInfoService ipService = ApiClient.getIpClient().create(IpInfoService.class);
         ipService.getCidade(IPINFO_TOKEN).enqueue(new Callback<IpInfoResponse>() {
@@ -77,4 +78,5 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
     }
+     */
 }
