@@ -2,109 +2,121 @@ package com.example.vigiaenchente_mobile;
 
 import android.os.Bundle;
 import android.util.Log;
-import android.view.View;
-import android.widget.Button;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-
-import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
-
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.concurrent.TimeUnit;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 
 public class MainActivity extends AppCompatActivity {
-    /*private static final String IPINFO_TOKEN = "";
-    private static final String OPENWHEATHER_KEY = "";
-    private static final String CIDADE_DEFAULT = "Sabará";
-    private TextView clima;*/
-    private ImageView escudo;
-    private ImageButton button;
-    private LinearLayout statusCard;
+
     private TextView statusText;
-    private int escudos[] = {R.drawable.shield_green, R.drawable.shield_yellow, R.drawable.shield_red};
-    private int statusCards[] = {R.drawable.green_background, R.drawable.yellow_background, R.drawable.red_background};
-    private String statusTexts[] = {"Não há risco de enchente", "Risco médio de enchente", "Risco alto de enchente"};
-    private int escudoAtual = 0;
+    private ImageView shieldIcon;
+    private LinearLayout statusCard;
+    private static final String TAG = "EnchenteApp";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
-        });
-        escudo = findViewById(R.id.shieldIcon);
-        button = findViewById(R.id.button4);
-        statusCard = findViewById(R.id.statusCard);
+
         statusText = findViewById(R.id.statusText);
-        //clima = findViewById(R.id.main);
-        //buscarCidadePorIp();
+        shieldIcon = findViewById(R.id.shieldIcon);
+        statusCard = findViewById(R.id.statusCard);
+
+        new Thread(() -> {
+            String resultado = calcularRiscoEnchente();
+            runOnUiThread(() -> atualizarUI(resultado));
+        }).start();
     }
 
-    public void mudarEscudo(View v) {
-        if (escudoAtual >= escudos.length - 1) {
-            escudoAtual = 0;
-        } else {
-            escudoAtual++;
+    private String calcularRiscoEnchente() {
+        double latitude = -19.8949;
+        double longitude = -43.8148;
+
+        Calendar cal = Calendar.getInstance();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        String endDate = sdf.format(cal.getTime());
+        cal.add(Calendar.DAY_OF_MONTH, -2);
+        String startDate = sdf.format(cal.getTime());
+
+        String urlString = "https://flood-api.open-meteo.com/v1/flood?latitude="
+                + latitude + "&longitude=" + longitude
+                + "&daily=river_discharge&models=forecast_v4"
+                + "&start_date=" + startDate + "&end_date=" + endDate;
+
+        OkHttpClient client = new OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build();
+
+        String resposta = tentarRequisicao(client, urlString, 3);
+        if (resposta == null) return "Erro";
+
+        try {
+            JSONObject json = new JSONObject(resposta);
+            JSONArray discharge = json.getJSONObject("daily").optJSONArray("river_discharge");
+            if (discharge == null || discharge.length() < 3) return "Erro";
+
+            double d0 = discharge.getDouble(0);
+            double d1 = discharge.getDouble(1);
+            double d2 = discharge.getDouble(2);
+
+            double media = (d0 + d1 + d2) / 3.0;
+            double variacao = d2 - d0;
+
+            if (media < 5) return (variacao > 3) ? "Médio" : "Baixo";
+            else if (media < 10) return (variacao > 3) ? "Alto" : "Médio";
+            else return "Alto";
+
+        } catch (Exception e) {
+            return "Erro";
         }
-        escudo.setImageResource(escudos[escudoAtual]);
-        statusCard.setBackgroundResource(statusCards[escudoAtual]);
-        statusText.setText(statusTexts[escudoAtual]);
     }
-    /*
-    private void buscarCidadePorIp(){
-        IpInfoService ipService = ApiClient.getIpClient().create(IpInfoService.class);
-        ipService.getCidade(IPINFO_TOKEN).enqueue(new Callback<IpInfoResponse>() {
-            @Override
-            public void onResponse(Call<IpInfoResponse> call, Response<IpInfoResponse> response) {
-                if (response.isSuccessful() && response.body() != null && response.body().getCidade() != null) {
-                    String cidade = response.body().getCidade();
-                    Log.d("API", "Cidade detectada: " + cidade);
-                    buscarClima(cidade);
-                } else {
-                    buscarClima(CIDADE_DEFAULT);
+
+    private String tentarRequisicao(OkHttpClient client, String url, int tentativas) {
+        for (int i = 0; i < tentativas; i++) {
+            try {
+                Request request = new Request.Builder().url(url).build();
+                try (Response response = client.newCall(request).execute()) {
+                    if (response.isSuccessful()) return response.body().string();
                 }
-            }
-
-            @Override
-            public void onFailure(Call<IpInfoResponse> call, Throwable t) {
-                Log.e("API", "Erro ao buscar cidade", t);
-                buscarClima(CIDADE_DEFAULT);
-            }
-        });
+            } catch (Exception ignored) {}
+            try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+        }
+        return null;
     }
 
-    private void buscarClima(String cidade) {
-        ClimaService weatherService = ApiClient.getClimaClient().create(ClimaService.class);
-        weatherService.getClima(cidade + ",br", "metric", "pt_br", OPENWHEATHER_KEY)
-                .enqueue(new Callback<ClimaResponse>() {
-                    @Override
-                    public void onResponse(Call<ClimaResponse> call, Response<ClimaResponse> response) {
-                        if (response.isSuccessful() && response.body() != null) {
-                            float temp = response.body().getMain().getTemp();
-                            String name = response.body().getCidade();
-                            clima.setText("Clima em " + name + ": " + temp + "°C");
-                        } else {
-                            clima.setText("Não foi possível obter o clima.");
-                        }
-                    }
 
-                    @Override
-                    public void onFailure(Call<ClimaResponse> call, Throwable t) {
-                        clima.setText("Erro ao buscar clima.");
-                        Log.e("API", "Erro ao buscar clima", t);
-                    }
-                });
+    private void atualizarUI(String risco) {
+        switch (risco) {
+            case "Baixo":
+                statusText.setText("Não há risco de enchente");
+                statusCard.setBackgroundResource(R.drawable.green_background);
+                shieldIcon.setImageResource(R.drawable.shield_green);
+                break;
+            case "Médio":
+                statusText.setText("Risco Médio de Enchente");
+                statusCard.setBackgroundResource(R.drawable.yellow_background);
+                shieldIcon.setImageResource(R.drawable.shield_yellow);
+                break;
+            case "Alto":
+                statusText.setText("Risco Alto de Enchente");
+                statusCard.setBackgroundResource(R.drawable.red_background);
+                shieldIcon.setImageResource(R.drawable.shield_red);
+                break;
+            default:
+                statusText.setText("Erro ao calcular risco");
+                statusCard.setBackgroundResource(R.drawable.card_background);
+                shieldIcon.setImageResource(R.drawable.shield_gray);
+                break;
+        }
     }
-     */
 }
