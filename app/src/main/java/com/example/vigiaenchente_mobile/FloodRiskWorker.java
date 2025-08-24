@@ -4,10 +4,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.os.Build;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
+import androidx.work.ExistingWorkPolicy;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
 import androidx.work.Worker;
@@ -36,25 +36,35 @@ public class FloodRiskWorker extends Worker {
     @NonNull
     @Override
     public Result doWork() {
+        // 1. Calcular risco
         String risco = calcularRiscoEnchente();
-        Log.d(TAG, "Risco calculado: " + risco);
 
-        FloodRiskData.setRisco(risco); // Atualiza LiveData
+        // 2. Atualizar LiveData
+        FloodRiskData.setRisco(risco);
+
+        // 3. Enviar notificação
         enviarNotificacao(risco);
 
-        // Reagendar próxima execução em 1 minuto
-        agendarProximo(getApplicationContext(), 1);
+        // 4. Reagendar próxima execução em 3 minutos
+        agendarProximo(getApplicationContext());
 
         return Result.success();
     }
 
-    private void agendarProximo(Context context, int minutos) {
+    // Reagendar Worker único
+    private void agendarProximo(Context context) {
         OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(FloodRiskWorker.class)
-                .setInitialDelay(minutos, TimeUnit.MINUTES)
+                .setInitialDelay(3, TimeUnit.MINUTES)
                 .build();
-        WorkManager.getInstance(context).enqueue(work);
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+                "FloodRiskWorker",
+                ExistingWorkPolicy.REPLACE, // Substitui worker antigo
+                work
+        );
     }
 
+    // Calcula risco de enchente (mesmo código)
     private String calcularRiscoEnchente() {
         double latitude = -19.8949;
         double longitude = -43.8148;
@@ -99,6 +109,7 @@ public class FloodRiskWorker extends Worker {
         }
     }
 
+    // Tentar requisição até 3 vezes
     private String tentarRequisicao(OkHttpClient client, String url, int tentativas) {
         for (int i = 0; i < tentativas; i++) {
             try {
@@ -112,6 +123,7 @@ public class FloodRiskWorker extends Worker {
         return null;
     }
 
+    // Enviar notificação (mesmo código)
     private void enviarNotificacao(String risco) {
         NotificationManager manager = (NotificationManager) getApplicationContext()
                 .getSystemService(Context.NOTIFICATION_SERVICE);
@@ -138,6 +150,7 @@ public class FloodRiskWorker extends Worker {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true);
 
-        manager.notify((int) System.currentTimeMillis(), builder.build()); // ID único a cada notificação
+        // ID fixo evita múltiplas notificações empilhadas
+        manager.notify(1, builder.build());
     }
 }

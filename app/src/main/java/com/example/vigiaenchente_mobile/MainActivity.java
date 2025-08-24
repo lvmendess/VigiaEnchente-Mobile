@@ -4,6 +4,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.Observer;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
+import androidx.work.ExistingWorkPolicy;
 
 import android.os.Bundle;
 import android.widget.ImageView;
@@ -28,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
         statusCard = findViewById(R.id.statusCard);
 
         observarRisco();
-        agendarFloodWorker(); // dispara a primeira execução
+        agendarFloodWorkerInicial(); // dispara o primeiro worker
     }
 
     private void observarRisco() {
@@ -40,11 +41,16 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void agendarFloodWorker() {
+    private void agendarFloodWorkerInicial() {
         OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(FloodRiskWorker.class)
                 .setInitialDelay(0, TimeUnit.SECONDS) // roda imediatamente
                 .build();
-        WorkManager.getInstance(this).enqueue(work);
+
+        WorkManager.getInstance(this).enqueueUniqueWork(
+                "FloodRiskWorker",
+                ExistingWorkPolicy.KEEP, // mantém qualquer worker ativo, não cria duplicado
+                work
+        );
     }
 
     private void atualizarUI(String risco) {
